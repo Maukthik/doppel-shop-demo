@@ -20,14 +20,13 @@ def connect():
 
 
 def product_json(row):
-    return {"id": row["id"], "name": row["name"], "price": row["price"]}
+    return {"id": row["id"], "name": row["name"], "price": row["price"], "in_stock": row["stock"] > 0}
 
 
 def order_total(subtotal, coupon):
-    """Coupon discount comes off the subtotal, then GST is added."""
-    discount = subtotal * COUPONS.get(coupon or "", 0) // 100
-    taxable = subtotal - discount
-    return taxable + taxable * TAX_PCT // 100
+    """Add GST, then take the coupon off."""
+    with_tax = subtotal + subtotal * TAX_PCT // 100
+    return with_tax - subtotal * COUPONS.get(coupon or "", 0) // 100
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -76,8 +75,6 @@ class Handler(BaseHTTPRequestHandler):
         with connect() as conn:
             subtotal = 0
             for item in items:
-                if int(item.get("qty", 0)) <= 0:
-                    return self.send(400, {"error": "qty must be at least 1"})
                 row = conn.execute("SELECT * FROM products WHERE id = ?", (item.get("product_id"),)).fetchone()
                 if not row:
                     return self.send(404, {"error": f"no such product {item.get('product_id')}"})
