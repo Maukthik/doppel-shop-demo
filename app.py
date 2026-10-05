@@ -29,6 +29,7 @@ def order_total(subtotal, coupon):
     taxable = subtotal - discount
     return taxable + taxable * TAX_PCT // 100
 
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):  # keep test output quiet
         pass
@@ -75,6 +76,8 @@ class Handler(BaseHTTPRequestHandler):
         with connect() as conn:
             subtotal = 0
             for item in items:
+                if int(item.get("qty", 0)) <= 0:
+                    return self.send(400, {"error": "qty must be at least 1"})
                 row = conn.execute("SELECT * FROM products WHERE id = ?", (item.get("product_id"),)).fetchone()
                 if not row:
                     return self.send(404, {"error": f"no such product {item.get('product_id')}"})
@@ -82,8 +85,6 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send(409, {"error": f"only {row['stock']} left of {row['name']}"})
                 subtotal += row["price"] * item["qty"]
             for item in items:
-                if int(item.get("qty", 0)) <= 0:
-                    return self.send(400, {"error": "qty must be at least 1"})
                 conn.execute("UPDATE products SET stock = stock - ? WHERE id = ?", (item["qty"], item["product_id"]))
             total = order_total(subtotal, coupon)
             cur = conn.execute("INSERT INTO orders (user_id, items, subtotal, total, coupon) VALUES (?, ?, ?, ?, ?)",
