@@ -24,10 +24,10 @@ def product_json(row):
 
 
 def order_total(subtotal, coupon):
-    """Coupon discount comes off the subtotal, then GST is added."""
-    discount = subtotal * COUPONS.get(coupon or "", 0) // 100
-    taxable = subtotal - discount
-    return taxable + taxable * TAX_PCT // 100
+    """Add GST, then take the coupon off."""
+    with_tax = subtotal + subtotal * TAX_PCT // 100
+    return with_tax - subtotal * COUPONS.get(coupon or "", 0) // 100
+
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):  # keep test output quiet
@@ -82,12 +82,11 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send(409, {"error": f"only {row['stock']} left of {row['name']}"})
                 subtotal += row["price"] * item["qty"]
             for item in items:
-                if int(item.get("qty", 0)) <= 0:
-                    return self.send(400, {"error": "qty must be at least 1"})
                 conn.execute("UPDATE products SET stock = stock - ? WHERE id = ?", (item["qty"], item["product_id"]))
             total = order_total(subtotal, coupon)
             cur = conn.execute("INSERT INTO orders (user_id, items, subtotal, total, coupon) VALUES (?, ?, ?, ?, ?)",
                                (data.get("user_id"), json.dumps(items), subtotal, total, coupon))
+            conn.commit()  # commit before answering, or the client's next read can race the write
             self.send(201, {"id": cur.lastrowid, "user_id": data.get("user_id"), "items": items,
                             "subtotal": subtotal, "total": total, "coupon": coupon})
 
